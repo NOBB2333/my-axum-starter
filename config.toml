@@ -1,17 +1,19 @@
 [server]
-host = "0.0.0.0"
+host = "0.0.0.0"       
 port = 3001
 timeout = 300
 
 [database]
-#url = ""
-
-max_connections = 10
+# url 通过环境变量 DATABASE_URL 设置
+max_connections = 10   
 pool_timeout = 30
 
 [logging]
-level = "debug"
-format = "compact"  # pretty | json | compact
-
-[secrets]
-#jwt_secret = ""
+level = "debug"          # 开发环境用 debug，看到更多日志
+console_format = "pretty" # 控制台格式：pretty 或 compact
+console = true           # 是否输出到控制台
+file = true              # 是否输出到文件
+file_dir = "./logs"      # 日志文件目录
+file_prefix = "app"      # 日志文件名前缀（会自动加环境后缀）
+rotation = "daily"       # 按天轮转：daily, hourly, never
+max_files = 30           # 保留30天的日志文件

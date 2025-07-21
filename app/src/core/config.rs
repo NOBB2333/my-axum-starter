@@ -41,14 +41,37 @@ pub struct DatabaseConfig {
     pub pool_timeout: u64,
 }
 
-/// 日志配置
+/// 增强的日志配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LoggingConfig {
     /// 日志级别 (trace, debug, info, warn, error)
     pub level: String,
-    /// 日志格式 (pretty, json, compact)
-    pub format: String,
+    /// 控制台日志格式 (pretty, compact) - 文件始终用JSON
+    pub console_format: String,
+    /// 是否输出到控制台
+    pub console: bool,
+    /// 是否输出到文件
+    pub file: bool,
+    /// 日志文件目录
+    pub file_dir: String,
+    /// 日志文件名前缀
+    pub file_prefix: String,
+    /// 日志轮转方式 (daily, hourly, never)
+    pub rotation: String,
+    /// 保留的日志文件数量（0表示不限制）
+    pub max_files: usize,
+}
+
+impl LoggingConfig {
+    /// 获取带环境后缀的文件前缀
+    pub fn get_file_prefix_with_env(&self) -> String {
+        let env_suffix = match self.level.as_str() {
+            "trace" | "debug" => "-dev",
+            _ => "-prod",
+        };
+        format!("{}{}", self.file_prefix, env_suffix)
+    }
 }
 
 /// 敏感信息配置
@@ -63,16 +86,6 @@ pub struct SecretsConfig {
 
 impl AppConfig {
     /// 从配置文件和环境变量加载配置
-    /// 
-    /// 加载优先级：
-    /// 1. config.toml 文件作为基础配置
-    /// 2. APP_ 前缀的环境变量覆盖
-    /// 3. 敏感环境变量直接读取（DATABASE_URL, JWT_SECRET, REDIS_URL）
-    /// 
-    /// # Returns
-    /// 
-    /// * `Ok(AppConfig)` - 成功加载的配置
-    /// * `Err(EnvConfigError)` - 配置加载失败或缺少必需的环境变量
     pub fn load() -> Result<Self, EnvConfigError> {
         // 加载 .env 文件，如果文件不存在则忽略
         dotenvy::dotenv().ok();
@@ -97,6 +110,20 @@ impl AppConfig {
             config.secrets.redis_url = Some(redis_url);
         }
 
+        // 生产环境日志配置覆盖
+        if let Ok(log_file_dir) = std::env::var("LOG_FILE_DIR") {
+            config.logging.file_dir = log_file_dir;
+            config.logging.file = true; // 自动启用文件日志
+        }
+
+        if let Ok(log_rotation) = std::env::var("LOG_ROTATION") {
+            config.logging.rotation = log_rotation;
+        }
+
+        if let Ok(log_console) = std::env::var("LOG_CONSOLE") {
+            config.logging.console = log_console.parse().unwrap_or(true);
+        }
+
         // 验证必需的配置项
         if config.database.url.is_empty() {
             return Err(EnvConfigError::MissingVar {
@@ -114,22 +141,13 @@ impl AppConfig {
     }
 
     /// 获取服务器监听地址
-    /// 
-    /// # Returns
-    /// 
-    /// 格式化的地址字符串，如 "127.0.0.1:3000"
     pub fn server_addr(&self) -> String {
         format!("{}:{}", self.server.host, self.server.port)
     }
 
     /// 初始化日志系统
-    /// 
-    /// # Returns
-    /// 
-    /// * `Ok(())` - 日志系统初始化成功
-    /// * `Err(AppError)` - 日志系统初始化失败
     pub fn init_tracing(&self) -> Result<(), AppError> {
-        crate::core::logging::init_tracing(&self.logging.level, &self.logging.format)
+        crate::core::logging::init_tracing(&self.logging)
     }
 }
 
@@ -168,7 +186,13 @@ impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
             level: "info".to_string(),
-            format: "pretty".to_string(),
+            console_format: "pretty".to_string(), 
+            console: true,
+            file: false,
+            file_dir: "./logs".to_string(),
+            file_prefix: "app".to_string(),
+            rotation: "daily".to_string(),
+            max_files: 30, // 默认保留30天
         }
     }
 }
