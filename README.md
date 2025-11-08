@@ -4,35 +4,71 @@
 
 ## 特性
 
-- Axum + SeaORM + PostgreSQL
-- 支持配置文件和环境变量
-- 统一的错误处理和 API 响应格式
-- OpenAPI 文档生成（debug 模式）
-- 基础中间件（日志、CORS、限流等）
+- **Web框架**: Axum + SeaORM + PostgreSQL
+- **认证系统**: JWT令牌认证 + Argon2密码哈希
+- **限流控制**: tower_governor IP限流（全局10req/s，认证端2req/s）
+- **配置管理**: 支持config.toml和环境变量，支持多种配置格式
+- **错误处理**: 统一的错误处理和分级错误码（10000-10999系统，11000-11999业务）
+- **API响应**: 标准化API响应格式，包含时间戳
+- **文档生成**: OpenAPI/Swagger文档（debug模式）
+- **中间件栈**: 日志追踪、CORS、压缩、请求ID等
+- **日志系统**: 支持文件日志轮转和自动清理
 
 ## 项目结构
 
 ```shell
-├── app/                     # 主应用程序
+├── app/                          # 主应用程序
 │   ├── src/
 │   │   ├── main.rs
-│   │   ├── core/            # 核心功能
-│   │   │   ├── config.rs    # 配置管理
-│   │   │   ├── logging.rs   # 日志
-│   │   │   ├── response.rs  # API响应
-│   │   │   ├── state.rs     # 应用状态
-│   │   │   └── middleware/
-│   │   ├── error/           # 错误处理
-│   │   ├── modules/         # 业务模块
-│   │   │   ├── auth/        # 认证模块
-│   │   │   └── docs/        # 文档
-│   │   ├── routes/          # 路由
-│   │   └── shared/          # 共享工具
-│   ├── assets/              # 静态文件
-│   └── templates/           # HTML模板
-├── entity/                  # 数据库实体
-├── migration/               # 数据库迁移
-└── config.toml              # 配置文件
+│   │   ├── core/                 # 核心功能
+│   │   │   ├── config/           # 配置管理（模块化）
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── logging.rs    # 日志配置
+│   │   │   │   ├── database.rs   # 数据库配置
+│   │   │   │   └── server.rs     # 服务器配置
+│   │   │   ├── logging.rs        # 日志功能
+│   │   │   ├── response.rs       # API响应格式
+│   │   │   ├── state.rs          # 应用状态
+│   │   │   ├── middleware/       # 中间件
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── auth.rs       # JWT认证中间件
+│   │   │   └── mod.rs
+│   │   ├── error/                # 错误处理
+│   │   │   ├── mod.rs
+│   │   │   └── auth.rs           # 认证错误
+│   │   ├── modules/              # 业务模块
+│   │   │   ├── user/             # 用户管理模块
+│   │   │   │   ├── mod.rs        # 路由定义
+│   │   │   │   ├── handler.rs    # 请求处理器
+│   │   │   │   ├── service.rs    # 业务逻辑
+│   │   │   │   └── dto.rs        # 数据传输对象
+│   │   │   └── docs/             # 文档模块
+│   │   ├── routes/               # API路由
+│   │   │   └── v1/               # V1版本API
+│   │   ├── shared/               # 共享工具
+│   │   │   ├── mod.rs
+│   │   │   ├── jwt.rs            # JWT服务
+│   │   │   └── password.rs       # 密码哈希（Argon2）
+│   │   └── lib.rs
+│   ├── assets/                   # 静态文件
+│   └── Cargo.toml
+├── entity/                       # 数据库实体（SeaORM生成）
+│   ├── src/
+│   │   ├── lib.rs
+│   │   ├── user.rs
+│   │   └── enums/
+│   │       └── user_status.rs    # 用户状态枚举
+│   └── Cargo.toml
+├── migration/                    # 数据库迁移
+│   ├── src/
+│   │   ├── lib.rs
+│   │   └── m20220101_000001_create_user_table.rs
+│   └── Cargo.toml
+├── config.toml                   # 配置文件
+├── config.dev.toml               # 开发环境配置
+├── .env.example                  # 环境变量示例
+├── Cargo.toml                    # Workspace配置
+└── README.md
 ```
 
 ## 快速开始
@@ -71,8 +107,8 @@ APP_LOGGING_LEVEL=info
 ### 3. 数据库设置
 
 ```bash
-# 运行迁移
-cargo run -p migration
+# 执行数据库迁移
+sea-orm-cli migrate up
 ```
 
 ### 4. 运行
@@ -106,17 +142,108 @@ format = "pretty"
 
 debug 模式下访问：http://localhost:3001/docs
 
+## API 测试指南
+
+### 1. 用户注册
+
+```bash
+curl -X POST http://127.0.0.1:3001/v1/user/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "testuser",
+    "email": "test@example.com",
+    "password": "password123",
+    "password_confirm": "password123"
+  }'
+```
+
+**响应示例：**
+```json
+{
+  "code": 0,
+  "msg": "Success",
+  "data": {
+    "id": 1,
+    "username": "testuser",
+    "email": "test@example.com"
+  },
+  "timestamp": "2025-11-08T12:08:27.674717+00:00"
+}
+```
+
+### 2. 用户登录
+
+```bash
+curl -X POST http://127.0.0.1:3001/v1/user/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username_or_email": "testuser",
+    "password": "password123"
+  }'
+```
+
+**响应示例：**
+```json
+{
+  "code": 0,
+  "msg": "Success",
+  "data": {
+    "id": 1,
+    "username": "testuser",
+    "email": "test@example.com",
+    "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
+    "expires_in": 604800
+  },
+  "timestamp": "2025-11-08T12:08:36.113891+00:00"
+}
+```
+
+### 3. 获取当前用户信息
+
+使用登录返回的 token，在 Authorization header 中以 Bearer 格式传递：
+
+```bash
+curl -X GET http://127.0.0.1:3001/v1/user/me \
+  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+```
+
+**响应示例：**
+```json
+{
+  "code": 0,
+  "msg": "Success",
+  "data": {
+    "id": 1,
+    "username": "testuser",
+    "email": "test@example.com"
+  },
+  "timestamp": "2025-11-08T12:09:14.398972+00:00"
+}
+```
+
+### 4. 健康检查
+
+```bash
+curl http://127.0.0.1:3001/health
+```
+
 ## 常用命令
 
 ```bash
 # 运行应用
 cargo run -p app
 
-# 数据库迁移
-cargo run -p migration
+# 数据库迁移（执行待处理的迁移）
+sea-orm-cli migrate up
 
-# 数据库模型实体生成
+# 回滚最后一个迁移
+sea-orm-cli migrate down
+
+# 生成数据库模型实体
 sea-orm-cli generate entity -o entity/src
+
+# 创建新的迁移文件
+sea-orm-cli migrate generate create_xxx_table
 ```
 
 ## 许可证
