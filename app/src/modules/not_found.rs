@@ -29,9 +29,9 @@ impl NotFoundTemplate {
 // 404 错误处理器
 pub async fn handle_404(request: Request) -> Response {
     let path = request.uri().path().to_string();
-    
+
     let headers = request.headers();
-    
+
     let request_id = headers
         .get("x-request-id")
         .and_then(|v| v.to_str().ok())

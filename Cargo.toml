@@ -6,7 +6,21 @@ license = "MIT"
 repository = "https://github.com/{{authors}}/{{project-name}}"
 
 [workspace.dependencies]
-sea-orm = { version = "1.1.12", features = [
-    "macros", "debug-print", "with-chrono", "with-uuid", "runtime-tokio-rustls", "sqlx-postgres", "with-json", "with-time"
+sea-orm = { version = "1.1.17", features = [
+    "macros",
+    "debug-print",
+    "with-chrono",
+    "with-uuid",
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+    "with-json",
+    "with-time",
 ] }
 serde = { version = "1.0.219", features = ["derive"] }
+strum = { version = "0.27.2", features = ["derive"] }
+num_enum = "0.7.5"
+schemars = { version = "0.9.0", features = ["derive", "chrono04", "uuid1"] }
+sonyflake = "0.4.0"
+harsh = "0.2.2"
+sqids = "0.4.2"
+validator = { version = "0.20.0", features = ["derive"] }

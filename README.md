@@ -233,7 +233,7 @@ curl http://127.0.0.1:3001/health
 # 运行应用
 cargo run -p app
 
-# 数据库迁移（执行待处理的迁移）
+# 数据库迁移
 sea-orm-cli migrate up
 
 # 回滚最后一个迁移

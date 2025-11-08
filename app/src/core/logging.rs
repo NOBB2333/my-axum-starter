@@ -1,8 +1,20 @@
-use crate::{core::config::LoggingConfig, error::AppError};
+use crate::{core::config::LoggingConfig, error::{AppError, ValidationError}};
 use std::fs;
 use tracing_appender::non_blocking;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+/// 初始化日志系统
+///
+/// 根据配置初始化 tracing 日志系统，支持以下功能：
+/// - 控制台输出（pretty 或 compact 格式）
+/// - 文件日志输出（JSON 格式）
+/// - 日志轮转（每日、每小时等）
+///
+/// # 参数
+/// * `config` - 日志配置对象
+///
+/// # 返回
+/// 成功初始化返回 Ok(())，失败返回 AppError
 pub fn init_tracing(config: &LoggingConfig) -> Result<(), AppError> {
     let env_filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(&config.level));
@@ -133,7 +145,7 @@ pub fn init_tracing(config: &LoggingConfig) -> Result<(), AppError> {
         }
         (false, false) => {
             return Err(AppError::Validation(
-                "至少需要启用控制台或文件日志输出".to_string(),
+                ValidationError::custom("至少需要启用控制台或文件日志输出"),
             ));
         }
     }
@@ -151,6 +163,16 @@ pub fn init_tracing(config: &LoggingConfig) -> Result<(), AppError> {
         tracing::info!("日志文件前缀: {}", config.get_file_prefix_with_env());
         tracing::info!("日志轮转策略: {}", config.rotation);
         tracing::info!("保留文件数量: {}", config.max_files);
+
+        if config.cleanup_enabled {
+            if config.cleanup_interval == 0 {
+                tracing::info!("日志清理: 启用（启动时清理）");
+            } else {
+                tracing::info!("日志清理: 启用（每 {} 小时清理一次）", config.cleanup_interval);
+            }
+        } else {
+            tracing::info!("日志清理: 禁用");
+        }
     }
 
     Ok(())
@@ -168,10 +190,10 @@ fn create_file_appender(
         "hourly" => Rotation::HOURLY,
         "never" => Rotation::NEVER,
         _ => {
-            return Err(AppError::Validation(format!(
+            return Err(AppError::Validation(ValidationError::custom(format!(
                 "不支持的日志轮转策略: {}，支持的策略: daily, hourly, never",
                 config.rotation
-            )));
+            ))));
         }
     };
 
@@ -185,7 +207,16 @@ fn create_file_appender(
     Ok(non_blocking(file_appender))
 }
 
-// 日志文件清理功能
+/// 清理旧日志文件
+///
+/// 根据配置删除超过最大文件数量限制的最旧的日志文件。
+/// 如果 max_files 设置为 0，则不进行任何清理。
+///
+/// # 参数
+/// * `config` - 日志配置对象
+///
+/// # 返回
+/// 成功返回 Ok(())，失败返回 AppError
 pub fn cleanup_old_logs(config: &LoggingConfig) -> Result<(), AppError> {
     if config.max_files == 0 {
         return Ok(()); // 0 表示不限制文件数量
