@@ -8,8 +8,8 @@
 - **认证系统**: JWT令牌认证 + Argon2密码哈希
 - **限流控制**: tower_governor IP限流（全局10req/s，认证端2req/s）
 - **配置管理**: 支持config.toml和环境变量，支持多种配置格式
-- **错误处理**: 统一的错误处理和分级错误码（10000-10999系统，11000-11999业务）
-- **API响应**: 标准化API响应格式，包含时间戳
+- **错误处理**: 统一的错误处理，HTTP状态码+错误原因映射
+- **API响应**: 遵循 Google JSON Style Guide 标准，支持分页、资源元数据
 - **文档生成**: OpenAPI/Swagger文档（debug模式）
 - **中间件栈**: 日志追踪、CORS、压缩、请求ID等
 - **日志系统**: 支持文件日志轮转和自动清理
@@ -27,7 +27,13 @@
 │   │   │   │   ├── database.rs   # 数据库配置
 │   │   │   │   └── server.rs     # 服务器配置
 │   │   │   ├── logging.rs        # 日志功能
-│   │   │   ├── response.rs       # API响应格式
+│   │   │   ├── response/         # API响应格式
+│   │   │   │   ├── mod.rs
+│   │   │   │   ├── api_response.rs
+│   │   │   │   ├── domain.rs
+│   │   │   │   ├── error.rs
+│   │   │   │   ├── reason.rs
+│   │   │   │   └── status.rs
 │   │   │   ├── state.rs          # 应用状态
 │   │   │   ├── middleware/       # 中间件
 │   │   │   │   ├── mod.rs
@@ -160,14 +166,13 @@ curl -X POST http://127.0.0.1:3001/v1/user/register \
 **响应示例：**
 ```json
 {
-  "code": 0,
-  "msg": "Success",
+  "api_version": "1.0",
   "data": {
-    "id": 1,
+    "kind": "User",
+    "id": "1",
     "username": "testuser",
     "email": "test@example.com"
-  },
-  "timestamp": "2025-11-08T12:08:27.674717+00:00"
+  }
 }
 ```
 
@@ -185,16 +190,15 @@ curl -X POST http://127.0.0.1:3001/v1/user/login \
 **响应示例：**
 ```json
 {
-  "code": 0,
-  "msg": "Success",
+  "api_version": "1.0",
   "data": {
-    "id": 1,
+    "kind": "User",
+    "id": "1",
     "username": "testuser",
     "email": "test@example.com",
     "token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
     "expires_in": 604800
-  },
-  "timestamp": "2025-11-08T12:08:36.113891+00:00"
+  }
 }
 ```
 
@@ -210,14 +214,13 @@ curl -X GET http://127.0.0.1:3001/v1/user/me \
 **响应示例：**
 ```json
 {
-  "code": 0,
-  "msg": "Success",
+  "api_version": "1.0",
   "data": {
-    "id": 1,
+    "kind": "User",
+    "id": "1",
     "username": "testuser",
     "email": "test@example.com"
-  },
-  "timestamp": "2025-11-08T12:09:14.398972+00:00"
+  }
 }
 ```
 
