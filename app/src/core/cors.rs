@@ -5,7 +5,7 @@ use std::time::Duration;
 use tower_http::cors::{Any, CorsLayer};
 
 use super::config::CorsConfig;
-use crate::error::EnvConfigError;
+use crate::error::ConfigError;
 
 /// 根据 CORS 配置构建 CorsLayer
 ///
@@ -30,10 +30,10 @@ use crate::error::EnvConfigError;
 /// let config = AppConfig::load()?;
 /// let cors_layer = build_cors_layer(&config.cors)?;
 /// ```
-pub fn build_cors_layer(cors_config: &CorsConfig) -> Result<CorsLayer, EnvConfigError> {
+pub fn build_cors_layer(cors_config: &CorsConfig) -> Result<CorsLayer, ConfigError> {
     // 当允许凭证时，不能使用通配符方法
     if cors_config.allow_credentials && cors_config.allow_methods.contains(&"*".to_string()) {
-        return Err(EnvConfigError::InvalidConfig(
+        return Err(ConfigError::Invalid(
             "Cannot combine `Access-Control-Allow-Credentials: true` with `Access-Control-Allow-Methods: *`"
                 .to_string(),
         ));

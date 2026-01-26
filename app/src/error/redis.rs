@@ -1,53 +1,49 @@
-use axum::Json;
+//! Redis 相关错误
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
-use super::ErrorCode;
+use crate::response::{ApiError, ApiResponse, Domain, ErrorDetail, Reason};
 
-/// Redis 错误
 #[derive(Debug, Error)]
 pub enum RedisError {
-    #[error("Failed to create Redis pool: {0}")]
+    #[error("Redis 连接池创建失败: {0}")]
     Pool(#[from] deadpool_redis::CreatePoolError),
 
-    #[error("Redis connection error: {0}")]
+    #[error("Redis 连接错误: {0}")]
     Connection(String),
 
-    #[error("Redis operation error: {0}")]
+    #[error("Redis 操作错误: {0}")]
     Operation(String),
 }
 
-impl ErrorCode for RedisError {
-    fn error_code(&self) -> u32 {
+impl RedisError {
+    fn status_code(&self) -> StatusCode {
         match self {
-            RedisError::Pool(_) => 10001,
-            RedisError::Connection(_) => 10002,
-            RedisError::Operation(_) => 10003,
+            Self::Pool(_) | Self::Connection(_) => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Operation(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
-    fn error_message(&self) -> String {
+    fn reason(&self) -> Reason {
         match self {
-            RedisError::Pool(e) => format!("Redis 连接池创建失败：{}", e),
-            RedisError::Connection(msg) => format!("Redis 连接错误：{}", msg),
-            RedisError::Operation(msg) => format!("Redis 操作错误：{}", msg),
+            Self::Pool(_) | Self::Connection(_) => Reason::RedisConnectionFailed,
+            Self::Operation(_) => Reason::RedisOperationFailed,
         }
     }
 
-    fn http_status_code(&self) -> StatusCode {
-        match self {
-            RedisError::Pool(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            RedisError::Connection(_) => StatusCode::SERVICE_UNAVAILABLE,
-            RedisError::Operation(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
+    fn to_api_error(&self) -> ApiError {
+        ApiError::new(self.status_code(), self.to_string()).with_detail(ErrorDetail::with_message(
+            Domain::Redis,
+            self.reason(),
+            self.to_string(),
+        ))
     }
 }
 
 impl IntoResponse for RedisError {
     fn into_response(self) -> Response {
-        let status = self.http_status_code();
-        let response = self.to_api_response();
-        (status, Json(response)).into_response()
+        ApiResponse::error(self.to_api_error()).into_response()
     }
 }

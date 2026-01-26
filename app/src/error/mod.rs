@@ -1,3 +1,7 @@
+//! 错误处理模块
+//!
+//! 所有错误类型统一转换为 Google JSON Style Guide 格式的响应。
+
 mod auth;
 mod config;
 mod file_upload;
@@ -5,134 +9,118 @@ mod redis;
 mod validation;
 
 use aide::OperationOutput;
-use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use std::error::Error;
 use thiserror::Error;
 
-use crate::ApiResponse;
+use crate::response::{ApiError, ApiResponse, Domain, ErrorDetail, Reason};
+
 pub use auth::AuthError;
-pub use config::*;
+pub use config::ConfigError;
 pub use file_upload::FileUploadError;
 pub use redis::RedisError;
 pub use validation::ValidationError;
 
-/// 错误码 Trait
-///
-/// 为各个错误类型定义业务错误码、错误消息和 HTTP 状态码的映射。
-/// 通过实现此 trait，每个错误类型可以独立定义自己的错误响应格式。
-pub trait ErrorCode: Error {
-    /// 获取业务错误码（用于 ApiResponse 的 code 字段）
-    fn error_code(&self) -> u32;
-
-    /// 获取错误消息（用于 ApiResponse 的 msg 字段）
-    fn error_message(&self) -> String {
-        self.to_string()
-    }
-
-    /// 获取 HTTP 状态码
-    fn http_status_code(&self) -> StatusCode {
-        StatusCode::INTERNAL_SERVER_ERROR
-    }
-
-    /// 构建 ApiResponse 错误响应
-    fn to_api_response(&self) -> ApiResponse<()> {
-        ApiResponse::new(self.error_code(), self.error_message(), None)
-    }
-}
-
-/// 应用程序错误枚举
-///
-/// 统一处理应用程序中可能出现的各种错误类型
+/// 应用程序错误
 #[derive(Debug, Error)]
 pub enum AppError {
-    #[error("Configuration error: {0}")]
-    Config(#[from] EnvConfigError),
+    #[error(transparent)]
+    Auth(#[from] AuthError),
 
-    #[error("Database error: {0}")]
-    Database(#[from] sea_orm::DbErr),
-
-    #[error("HTTP request error: {status}")]
-    Http { status: StatusCode },
-
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    #[error("Serialization error: {0}")]
-    Serde(#[from] serde_json::Error),
-
-    #[error("Validation error: {0}")]
+    #[error(transparent)]
     Validation(#[from] ValidationError),
 
-    #[error("General error: {0}")]
-    Anyhow(#[from] anyhow::Error),
+    #[error(transparent)]
+    Config(#[from] ConfigError),
 
-    #[error("File handle error: {0}")]
-    FileHandle(#[from] FileUploadError),
+    #[error(transparent)]
+    FileUpload(#[from] FileUploadError),
 
-    #[error("Redis error: {0}")]
+    #[error(transparent)]
     Redis(#[from] RedisError),
 
-    #[error("Authentication error: {0}")]
-    Auth(#[from] AuthError),
+    #[error("数据库错误: {0}")]
+    Database(#[from] sea_orm::DbErr),
+
+    #[error("IO 错误: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("序列化错误: {0}")]
+    Serde(#[from] serde_json::Error),
+
+    #[error("{0}")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         match self {
-            // 直接委托给具体的错误类型处理
-            AppError::Redis(err) => err.into_response(),
-            AppError::FileHandle(err) => err.into_response(),
-            AppError::Config(err) => err.into_response(),
-            AppError::Validation(err) => err.into_response(),
-            AppError::Auth(err) => err.into_response(),
+            // 委托给具体错误类型
+            Self::Auth(e) => e.into_response(),
+            Self::Validation(e) => e.into_response(),
+            Self::Config(e) => e.into_response(),
+            Self::FileUpload(e) => e.into_response(),
+            Self::Redis(e) => e.into_response(),
 
-            // 其他错误类型的通用处理
-            AppError::Database(_) => {
-                let response = ApiResponse::<()>::new(10101, "数据库错误".to_string(), None);
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
+            // 数据库错误
+            Self::Database(e) => {
+                let error = ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "数据库错误")
+                    .with_detail(ErrorDetail::with_message(
+                        Domain::Database,
+                        Reason::QueryFailed,
+                        e.to_string(),
+                    ));
+                ApiResponse::error(error).into_response()
             }
-            AppError::Io(_) => {
-                let response = ApiResponse::<()>::new(10301, "IO 错误".to_string(), None);
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
+
+            // IO 错误
+            Self::Io(e) => {
+                let error = ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "IO 错误")
+                    .with_detail(ErrorDetail::with_message(
+                        Domain::Global,
+                        Reason::InternalError,
+                        e.to_string(),
+                    ));
+                ApiResponse::error(error).into_response()
             }
-            AppError::Serde(err) => {
-                let response =
-                    ApiResponse::<()>::new(10302, format!("数据格式错误：{}", err), None);
-                (StatusCode::BAD_REQUEST, Json(response)).into_response()
-            }
-            AppError::Anyhow(err) => {
-                let response = ApiResponse::<()>::new(10303, format!("内部错误：{}", err), None);
-                (StatusCode::INTERNAL_SERVER_ERROR, Json(response)).into_response()
-            }
-            AppError::Http { status } => {
-                let response = ApiResponse::<()>::new(
-                    status.as_u16() as u32,
-                    format!("HTTP 错误：{}", status),
-                    None,
+
+            // 序列化错误
+            Self::Serde(e) => {
+                let error = ApiError::new(StatusCode::BAD_REQUEST, "数据格式错误").with_detail(
+                    ErrorDetail::with_message(Domain::Global, Reason::InvalidFormat, e.to_string()),
                 );
-                (status, Json(response)).into_response()
+                ApiResponse::error(error).into_response()
+            }
+
+            // 通用错误
+            Self::Anyhow(e) => {
+                let error = ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, "内部错误")
+                    .with_detail(ErrorDetail::with_message(
+                        Domain::Global,
+                        Reason::InternalError,
+                        e.to_string(),
+                    ));
+                ApiResponse::error(error).into_response()
             }
         }
     }
 }
 
 impl From<axum::extract::multipart::MultipartError> for AppError {
-    fn from(err: axum::extract::multipart::MultipartError) -> Self {
-        AppError::FileHandle(FileUploadError::Multipart(err))
+    fn from(e: axum::extract::multipart::MultipartError) -> Self {
+        Self::FileUpload(FileUploadError::Multipart(e))
     }
 }
 
 impl From<deadpool_redis::CreatePoolError> for AppError {
-    fn from(err: deadpool_redis::CreatePoolError) -> Self {
-        AppError::Redis(RedisError::Pool(err))
+    fn from(e: deadpool_redis::CreatePoolError) -> Self {
+        Self::Redis(RedisError::Pool(e))
     }
 }
 
 impl From<validator::ValidationErrors> for AppError {
-    fn from(err: validator::ValidationErrors) -> Self {
-        AppError::Validation(ValidationError::from_validator(err))
+    fn from(e: validator::ValidationErrors) -> Self {
+        Self::Validation(ValidationError::from_validator(e))
     }
 }
 

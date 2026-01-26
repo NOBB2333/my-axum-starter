@@ -1,30 +1,28 @@
-use axum::Json;
+//! 验证相关错误
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
-use super::ErrorCode;
+use crate::response::{ApiError, ApiResponse, Domain, ErrorDetail, Reason};
 
-/// 验证错误类型
 #[derive(Debug, Error)]
 pub enum ValidationError {
-    /// validator 库验证失败
     #[error("{0}")]
-    ValidatorError(String),
+    Fields(String),
 
-    /// 自定义验证错误
     #[error("{0}")]
     Custom(String),
 }
 
 impl ValidationError {
-    /// 从 validator::ValidationErrors 创建验证错误
+    /// 从 validator::ValidationErrors 创建
     pub fn from_validator(errors: validator::ValidationErrors) -> Self {
         let messages: Vec<String> = errors
             .field_errors()
             .iter()
-            .map(|(field, errors)| {
-                let error_msgs = errors
+            .map(|(field, errs)| {
+                let msgs = errs
                     .iter()
                     .filter_map(|e| e.message.as_ref())
                     .map(|m| m.to_string())
@@ -33,44 +31,30 @@ impl ValidationError {
                 format!(
                     "{}: {}",
                     field,
-                    if error_msgs.is_empty() {
-                        "validation failed".to_string()
+                    if msgs.is_empty() {
+                        "验证失败"
                     } else {
-                        error_msgs
+                        &msgs
                     }
                 )
             })
             .collect();
-
-        ValidationError::ValidatorError(messages.join("; "))
+        Self::Fields(messages.join("; "))
     }
 
-    /// 创建自定义验证错误
-    pub fn custom<S: Into<String>>(msg: S) -> Self {
-        ValidationError::Custom(msg.into())
-    }
-}
-
-impl ErrorCode for ValidationError {
-    fn error_code(&self) -> u32 {
-        11001
+    pub fn custom(msg: impl Into<String>) -> Self {
+        Self::Custom(msg.into())
     }
 
-    fn error_message(&self) -> String {
-        match self {
-            ValidationError::ValidatorError(msg) => format!("验证错误：{}", msg),
-            ValidationError::Custom(msg) => format!("验证错误：{}", msg),
-        }
-    }
-
-    fn http_status_code(&self) -> StatusCode {
-        StatusCode::BAD_REQUEST
+    fn to_api_error(&self) -> ApiError {
+        ApiError::new(StatusCode::BAD_REQUEST, self.to_string()).with_detail(
+            ErrorDetail::with_message(Domain::Validation, Reason::InvalidFormat, self.to_string()),
+        )
     }
 }
 
 impl IntoResponse for ValidationError {
     fn into_response(self) -> Response {
-        let response = self.to_api_response();
-        (self.http_status_code(), Json(response)).into_response()
+        ApiResponse::error(self.to_api_error()).into_response()
     }
 }

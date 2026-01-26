@@ -26,8 +26,10 @@ use strum::{Display, EnumString};
 #[serde(rename_all = "snake_case")]
 #[strum(serialize_all = "snake_case")]
 #[repr(i16)]
+#[derive(Default)]
 pub enum UserStatus {
     /// 激活状态
+    #[default]
     Active = 0,
 
     /// 停用状态
@@ -35,10 +37,4 @@ pub enum UserStatus {
 
     /// 删除状态
     Deleted = 2,
-}
-
-impl Default for UserStatus {
-    fn default() -> Self {
-        UserStatus::Active
-    }
 }

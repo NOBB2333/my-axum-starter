@@ -1,66 +1,61 @@
-use axum::Json;
+//! 文件上传相关错误
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
-use super::ErrorCode;
+use crate::response::{ApiError, ApiResponse, Domain, ErrorDetail, Reason};
 
 #[derive(Debug, Error)]
 pub enum FileUploadError {
-    #[error("Multipart error: {0}")]
+    #[error("文件解析错误: {0}")]
     Multipart(#[from] axum::extract::multipart::MultipartError),
 
-    #[error("File size exceeds the limit: {0} bytes")]
-    FileSizeExceeded(usize),
+    #[error("文件大小超出限制: {0} 字节")]
+    TooLarge(usize),
 
-    #[error("File type not allowed: {0}")]
-    FileTypeNotAllowed(String),
+    #[error("文件类型不允许: {0}")]
+    TypeNotAllowed(String),
 
-    #[error("File upload failed: {0}")]
-    UploadFailed(String),
+    #[error("上传失败: {0}")]
+    Failed(String),
 
-    #[error("Missing required field: {0}")]
+    #[error("缺少必需字段: {0}")]
     MissingField(String),
 }
 
-impl ErrorCode for FileUploadError {
-    fn error_code(&self) -> u32 {
+impl FileUploadError {
+    fn status_code(&self) -> StatusCode {
         match self {
-            FileUploadError::Multipart(_) => 11101,
-            FileUploadError::FileSizeExceeded(_) => 11102,
-            FileUploadError::FileTypeNotAllowed(_) => 11103,
-            FileUploadError::UploadFailed(_) => 11104,
-            FileUploadError::MissingField(_) => 11105,
+            Self::Multipart(_) => StatusCode::BAD_REQUEST,
+            Self::TooLarge(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::TypeNotAllowed(_) => StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            Self::Failed(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingField(_) => StatusCode::BAD_REQUEST,
         }
     }
 
-    fn error_message(&self) -> String {
+    fn reason(&self) -> Reason {
         match self {
-            FileUploadError::Multipart(e) => format!("文件上传表单解析错误：{}", e),
-            FileUploadError::FileSizeExceeded(size) => {
-                format!("文件大小超出限制：{} 字节", size)
-            }
-            FileUploadError::FileTypeNotAllowed(t) => format!("文件类型不允许：{}", t),
-            FileUploadError::UploadFailed(msg) => format!("文件上传失败：{}", msg),
-            FileUploadError::MissingField(field) => format!("缺少必填字段：{}", field),
+            Self::Multipart(_) => Reason::InvalidFormat,
+            Self::TooLarge(_) => Reason::FileTooLarge,
+            Self::TypeNotAllowed(_) => Reason::FileTypeNotAllowed,
+            Self::Failed(_) => Reason::UploadFailed,
+            Self::MissingField(_) => Reason::RequiredFieldMissing,
         }
     }
 
-    fn http_status_code(&self) -> StatusCode {
-        match self {
-            FileUploadError::Multipart(_) => StatusCode::BAD_REQUEST,
-            FileUploadError::FileSizeExceeded(_) => StatusCode::PAYLOAD_TOO_LARGE,
-            FileUploadError::FileTypeNotAllowed(_) => StatusCode::BAD_REQUEST,
-            FileUploadError::UploadFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            FileUploadError::MissingField(_) => StatusCode::BAD_REQUEST,
-        }
+    fn to_api_error(&self) -> ApiError {
+        ApiError::new(self.status_code(), self.to_string()).with_detail(ErrorDetail::with_message(
+            Domain::File,
+            self.reason(),
+            self.to_string(),
+        ))
     }
 }
 
 impl IntoResponse for FileUploadError {
     fn into_response(self) -> Response {
-        let status = self.http_status_code();
-        let response = self.to_api_response();
-        (status, Json(response)).into_response()
+        ApiResponse::error(self.to_api_error()).into_response()
     }
 }

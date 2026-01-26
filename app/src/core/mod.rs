@@ -7,7 +7,7 @@ mod cors;
 mod logging;
 pub mod middleware;
 mod rate_limit;
-mod response;
+pub mod response;
 pub mod state;
 
 /// 应用全局配置
@@ -19,6 +19,6 @@ pub use logging::cleanup_old_logs;
 /// 速率限制错误处理函数
 pub use rate_limit::handle_rate_limit_error;
 /// 标准 API 响应格式
-pub use response::ApiResponse;
+pub use response::{API_VERSION, ApiResponse, Domain, ErrorDetail};
 /// 应用状态（包含数据库、Redis等）
 pub use state::AppState;

@@ -1,7 +1,13 @@
-use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, ActiveModelTrait, Set, Condition};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set,
+};
 use tracing::instrument;
 
-use crate::{error::AuthError, shared::{FromState, password, jwt::JwtService}, AppState};
+use crate::{
+    AppState,
+    error::AuthError,
+    shared::{FromState, jwt::JwtService, password},
+};
 use entity::user;
 
 use super::dto::{LoginRequest, LoginResponse, RegisterRequest, RegisterResponse};
@@ -122,7 +128,7 @@ impl UserService {
             .filter(
                 Condition::any()
                     .add(user::Column::Username.eq(&req.username_or_email))
-                    .add(user::Column::Email.eq(&req.username_or_email))
+                    .add(user::Column::Email.eq(&req.username_or_email)),
             )
             .one(&self.db)
             .await
@@ -143,7 +149,8 @@ impl UserService {
         }
 
         // 生成 JWT token
-        let token = self.jwt_service
+        let token = self
+            .jwt_service
             .generate_token(user_model.id, 7 * 24 * 3600) // 7天过期
             .map_err(|e| AuthError::Internal(e.to_string()))?;
 

@@ -14,7 +14,7 @@ pub use secrets::SecretsConfig;
 pub use section::ConfigSection;
 pub use server::ServerConfig;
 
-use crate::error::EnvConfigError;
+use crate::error::ConfigError;
 use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -25,6 +25,7 @@ use std::path::PathBuf;
 /// 通过 `load()` 方法从配置文件和环境变量加载配置，支持多层次优先级管理。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+#[derive(Default)]
 pub struct AppConfig {
     /// 服务器配置
     pub server: ServerConfig,
@@ -58,7 +59,7 @@ impl AppConfig {
     /// # 返回值
     ///
     /// 成功返回配置对象，失败返回配置错误
-    pub fn load() -> Result<Self, EnvConfigError> {
+    pub fn load() -> Result<Self, ConfigError> {
         // 加载 .env 文件（如果存在）
         dotenvy::dotenv().ok();
 
@@ -80,7 +81,7 @@ impl AppConfig {
 
         let config = builder
             .build()
-            .map_err(|e| EnvConfigError::InvalidConfig(format!("配置构建失败：{}", e)))?;
+            .map_err(|e| ConfigError::Invalid(format!("配置构建失败：{}", e)))?;
 
         // 加载配置
         let mut app_config = Self::default();
@@ -99,11 +100,11 @@ impl AppConfig {
     ///
     /// 这是支持 Trait 扩展的核心方法，通过 ConfigSection trait
     /// 实现灵活的配置加载机制。
-    fn load_from_config(&mut self, config: &Config) -> Result<(), EnvConfigError> {
+    fn load_from_config(&mut self, config: &Config) -> Result<(), ConfigError> {
         let app_config: AppConfig = config
             .clone()
             .try_deserialize()
-            .map_err(|e| EnvConfigError::InvalidConfig(format!("配置反序列化失败：{}", e)))?;
+            .map_err(|e| ConfigError::Invalid(format!("配置反序列化失败：{}", e)))?;
 
         self.server = app_config.server;
         self.database = app_config.database;
@@ -118,7 +119,7 @@ impl AppConfig {
     /// 应用环境变量覆盖
     ///
     /// 遍历所有配置段，应用来自环境变量的覆盖值（最高优先级）。
-    fn apply_env_overrides(&mut self) -> Result<(), EnvConfigError> {
+    fn apply_env_overrides(&mut self) -> Result<(), ConfigError> {
         let sections: Vec<&mut dyn ConfigSection> = vec![
             &mut self.server,
             &mut self.database,
@@ -130,7 +131,7 @@ impl AppConfig {
 
         for section in sections {
             section.apply_env_overrides().map_err(|e| {
-                EnvConfigError::InvalidConfig(format!(
+                ConfigError::Invalid(format!(
                     "为 {} 应用环境变量覆盖失败：{}",
                     section.section_name(),
                     e
@@ -144,7 +145,7 @@ impl AppConfig {
     /// 验证所有配置段
     ///
     /// 确保所有配置值都符合规范和约束条件。
-    fn validate(&self) -> Result<(), EnvConfigError> {
+    fn validate(&self) -> Result<(), ConfigError> {
         let sections: Vec<&dyn ConfigSection> = vec![
             &self.server,
             &self.database,
@@ -156,11 +157,7 @@ impl AppConfig {
 
         for section in sections {
             section.validate().map_err(|e| {
-                EnvConfigError::InvalidConfig(format!(
-                    "{} 配置验证失败：{}",
-                    section.section_name(),
-                    e
-                ))
+                ConfigError::Invalid(format!("{} 配置验证失败：{}", section.section_name(), e))
             })?;
         }
 
@@ -183,18 +180,5 @@ impl AppConfig {
     /// 成功返回 `Ok(())`，失败返回应用错误
     pub fn init_tracing(&self) -> Result<(), crate::AppError> {
         crate::core::logging::init_tracing(&self.logging)
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            database: DatabaseConfig::default(),
-            logging: LoggingConfig::default(),
-            secrets: SecretsConfig::default(),
-            cors: CorsConfig::default(),
-            redis: RedisConfig::default(),
-        }
     }
 }

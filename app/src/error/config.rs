@@ -1,75 +1,57 @@
-use axum::Json;
+//! 配置相关错误
+
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use thiserror::Error;
 
-use super::ErrorCode;
+use crate::response::{ApiError, ApiResponse, Domain, ErrorDetail, Reason};
 
 #[derive(Debug, Error)]
-pub enum EnvConfigError {
-    #[error("Missing required environment variable: {var_name}")]
-    MissingVar { var_name: String },
+pub enum ConfigError {
+    #[error("缺少必需的环境变量: {0}")]
+    MissingVar(String),
 
-    #[error("Invalid value for {var_name}: {value}")]
-    InvalidValue { var_name: String, value: String },
+    #[error("环境变量 {var} 的值无效: {value}")]
+    InvalidValue { var: String, value: String },
 
-    #[error("Configuration error: {0}")]
-    InvalidConfig(String),
+    #[error("配置错误: {0}")]
+    Invalid(String),
 
-    #[error("Environment variable error: {0}")]
-    EnvVar(#[from] std::env::VarError),
-
-    #[error("Parse error for {var_name}: {source}")]
-    ParseError {
-        var_name: String,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
+    #[error("解析错误: {0}")]
+    Parse(String),
 }
 
-impl From<std::num::ParseIntError> for EnvConfigError {
-    fn from(err: std::num::ParseIntError) -> Self {
-        EnvConfigError::ParseError {
-            var_name: "unknown".to_string(),
-            source: Box::new(err),
-        }
-    }
-}
-
-impl ErrorCode for EnvConfigError {
-    fn error_code(&self) -> u32 {
+impl ConfigError {
+    fn reason(&self) -> Reason {
         match self {
-            EnvConfigError::MissingVar { .. } => 10201,
-            EnvConfigError::InvalidValue { .. } => 10202,
-            EnvConfigError::InvalidConfig(_) => 10203,
-            EnvConfigError::EnvVar(_) => 10204,
-            EnvConfigError::ParseError { .. } => 10205,
+            Self::MissingVar(_) => Reason::MissingEnvVar,
+            Self::InvalidValue { .. } => Reason::InvalidConfig,
+            Self::Invalid(_) => Reason::InvalidConfig,
+            Self::Parse(_) => Reason::InvalidConfig,
         }
     }
 
-    fn error_message(&self) -> String {
-        match self {
-            EnvConfigError::MissingVar { var_name } => format!("缺少必需的环境变量：{}", var_name),
-            EnvConfigError::InvalidValue { var_name, value } => {
-                format!("环境变量 {} 的值无效：{}", var_name, value)
-            }
-            EnvConfigError::InvalidConfig(msg) => format!("配置错误：{}", msg),
-            EnvConfigError::EnvVar(e) => format!("环境变量错误：{}", e),
-            EnvConfigError::ParseError { var_name, source } => {
-                format!("环境变量 {} 解析错误：{}", var_name, source)
-            }
-        }
-    }
-
-    fn http_status_code(&self) -> StatusCode {
-        StatusCode::INTERNAL_SERVER_ERROR
+    fn to_api_error(&self) -> ApiError {
+        ApiError::new(StatusCode::INTERNAL_SERVER_ERROR, self.to_string()).with_detail(
+            ErrorDetail::with_message(Domain::Config, self.reason(), self.to_string()),
+        )
     }
 }
 
-impl IntoResponse for EnvConfigError {
+impl IntoResponse for ConfigError {
     fn into_response(self) -> Response {
-        let status = self.http_status_code();
-        let response = self.to_api_response();
-        (status, Json(response)).into_response()
+        ApiResponse::error(self.to_api_error()).into_response()
+    }
+}
+
+impl From<std::env::VarError> for ConfigError {
+    fn from(e: std::env::VarError) -> Self {
+        Self::MissingVar(e.to_string())
+    }
+}
+
+impl From<std::num::ParseIntError> for ConfigError {
+    fn from(e: std::num::ParseIntError) -> Self {
+        Self::Parse(e.to_string())
     }
 }
