@@ -47,17 +47,19 @@ impl UserService {
     /// 失败返回 AuthError（如果用户已存在、验证失败等）
     #[instrument(skip(self, req))]
     pub async fn register(&self, req: RegisterRequest) -> Result<RegisterResponse, AuthError> {
-        // 验证输入参数
+        // 验证用户名
         if req.username.is_empty() || req.username.len() < 3 || req.username.len() > 20 {
-            return Err(AuthError::InvalidInput);
+            return Err(AuthError::InvalidUsername);
         }
 
+        // 验证密码长度
         if req.password.len() < 8 {
-            return Err(AuthError::InvalidInput);
+            return Err(AuthError::PasswordTooShort);
         }
 
+        // 验证两次密码是否一致
         if req.password != req.password_confirm {
-            return Err(AuthError::InvalidInput);
+            return Err(AuthError::PasswordMismatch);
         }
 
         // 检查用户名是否已存在

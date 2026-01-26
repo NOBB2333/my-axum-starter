@@ -26,7 +26,7 @@ pub async fn require_auth(
         Some(header) if header.starts_with("Bearer ") => &header[7..],
         _ => {
             warn!("Missing or invalid Authorization header");
-            return Err(AppError::Auth(crate::error::AuthError::InvalidInput));
+            return Err(AppError::Auth(crate::error::AuthError::InvalidToken));
         }
     };
 

@@ -17,8 +17,14 @@ pub enum AuthError {
     #[error("密码错误")]
     InvalidPassword,
 
-    #[error("用户名或邮箱格式错误")]
-    InvalidInput,
+    #[error("用户名格式无效")]
+    InvalidUsername,
+
+    #[error("密码长度至少8个字符")]
+    PasswordTooShort,
+
+    #[error("两次输入的密码不一致")]
+    PasswordMismatch,
 
     #[error("用户已被停用")]
     UserInactive,
@@ -36,7 +42,9 @@ impl AuthError {
             Self::UserAlreadyExists => StatusCode::CONFLICT,
             Self::UserNotFound => StatusCode::NOT_FOUND,
             Self::InvalidPassword => StatusCode::UNAUTHORIZED,
-            Self::InvalidInput => StatusCode::BAD_REQUEST,
+            Self::InvalidUsername => StatusCode::BAD_REQUEST,
+            Self::PasswordTooShort => StatusCode::BAD_REQUEST,
+            Self::PasswordMismatch => StatusCode::BAD_REQUEST,
             Self::UserInactive => StatusCode::FORBIDDEN,
             Self::InvalidToken => StatusCode::UNAUTHORIZED,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -48,7 +56,9 @@ impl AuthError {
             Self::UserAlreadyExists => Reason::UserAlreadyExists,
             Self::UserNotFound => Reason::UserNotFound,
             Self::InvalidPassword => Reason::InvalidPassword,
-            Self::InvalidInput => Reason::InvalidFormat,
+            Self::InvalidUsername => Reason::InvalidUsername,
+            Self::PasswordTooShort => Reason::WeakPassword,
+            Self::PasswordMismatch => Reason::PasswordMismatch,
             Self::UserInactive => Reason::UserInactive,
             Self::InvalidToken => Reason::InvalidToken,
             Self::Internal(_) => Reason::InternalError,
