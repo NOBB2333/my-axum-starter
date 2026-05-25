@@ -248,7 +248,7 @@ pub fn cleanup_old_logs(config: &LoggingConfig) -> Result<(), AppError> {
         })
         .collect();
 
-    log_files.sort_by(|a, b| b.1.cmp(&a.1));
+    log_files.sort_by_key(|(_, modified)| std::cmp::Reverse(*modified));
 
     if log_files.len() > config.max_files {
         for (path, _) in log_files.iter().skip(config.max_files) {
