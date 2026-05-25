@@ -44,6 +44,15 @@ pub fn routes(state: Arc<AppState>) -> ApiRouter {
 
     ApiRouter::new()
         .api_route(
+            "/",
+            get_with(handler::list_users, handler::list_users_docs).layer(
+                axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    crate::core::middleware::auth::require_auth,
+                ),
+            ),
+        )
+        .api_route(
             "/register",
             post_with(handler::register, handler::register_docs)
                 .layer(GovernorLayer::new(register_limiter)),

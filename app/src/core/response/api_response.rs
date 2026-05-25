@@ -266,10 +266,10 @@ impl<T: Serialize> ApiResponse<T> {
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```ignore
     /// # use crate::response::ApiResponse;
     /// let response = ApiResponse::success(user).with_kind("User");
-    /// ```ignore
+    /// ```
     pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
         if let Some(ref mut data) = self.data {
             data.kind = Some(kind.into());

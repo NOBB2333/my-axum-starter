@@ -1,22 +1,7 @@
-/// 核心功能模块（配置、日志、中间件等）
-mod core;
-/// 错误处理模块
-mod error;
-/// 业务功能模块
-mod modules;
-/// API路由模块
-mod routes;
-/// 共享工具模块（JWT、密码等）
-mod shared;
-
-pub use core::*;
-pub use error::*;
-pub use modules::*;
-pub use routes::v1;
-
 use aide::axum::{ApiRouter, IntoApiResponse};
 use aide::openapi::{OpenApi, Tag};
 use aide::transform::TransformOpenApi;
+use app::*;
 use axum::body::Body;
 use axum::error_handling::HandleErrorLayer;
 use axum::http::Request;
@@ -76,9 +61,11 @@ async fn main() -> Result<(), AppError> {
     // 初始化 tracing 日志系统
     config.init_tracing()?;
 
-    // sea-orm 数据库连接和自动迁移
+    // 确保 PostgreSQL 数据库存在，然后连接、自动迁移和可选种子数据
+    ensure_database_exists(&config.database.url).await?;
     let connection = sea_orm::Database::connect(&config.database.url).await?;
     Migrator::up(&connection, None).await?;
+    seed_demo_data_if_enabled(&connection).await?;
 
     // 初始化 API 文档生成
     aide::generate::on_error(|error| println!("{error}"));

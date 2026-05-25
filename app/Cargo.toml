@@ -43,6 +43,7 @@ dotenvy = "0.15.7"
 anyhow = "1.0.98"
 tracing-appender = "0.2.3"
 config = "0.15.18"
+url = "2.5.4"
 deadpool-redis = { version = "0.22.0", features = ["rt_tokio_1", "serde"] }
 tower_governor = { version = "0.8.0", features = ["tracing"] }
 validator = { workspace = true }

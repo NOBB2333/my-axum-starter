@@ -1,16 +1,17 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, Set, SqlErr, TransactionTrait,
 };
 use tracing::instrument;
 
 use crate::{
-    AppState,
+    AppState, Pagination,
     error::AuthError,
     shared::{FromState, jwt::JwtService, password},
 };
 use entity::user;
 
-use super::dto::{LoginRequest, LoginResponse, RegisterRequest, RegisterResponse};
+use super::dto::{LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, UserListItem};
 
 /// 用户服务
 ///
@@ -30,6 +31,28 @@ impl FromState for UserService {
 }
 
 impl UserService {
+    /// 分页查询用户列表。
+    #[instrument(skip(self))]
+    pub async fn list_users(
+        &self,
+        pagination: Pagination,
+    ) -> Result<(Vec<UserListItem>, u64), AuthError> {
+        let paginator = user::Entity::find()
+            .order_by_desc(user::Column::CreatedAt)
+            .paginate(&self.db, pagination.page_size);
+        let total = paginator
+            .num_items()
+            .await
+            .map_err(|_| AuthError::Internal("数据库查询失败".to_string()))?;
+        let rows = paginator
+            .fetch_page(pagination.zero_based_page())
+            .await
+            .map_err(|_| AuthError::Internal("数据库查询失败".to_string()))?;
+
+        let items = rows.into_iter().map(UserListItem::from).collect();
+        Ok((items, total))
+    }
+
     /// 用户注册业务逻辑
     ///
     /// 执行以下步骤：
@@ -62,10 +85,16 @@ impl UserService {
             return Err(AuthError::PasswordMismatch);
         }
 
+        let txn = self
+            .db
+            .begin()
+            .await
+            .map_err(|_| AuthError::Internal("数据库事务启动失败".to_string()))?;
+
         // 检查用户名是否已存在
         let existing_user = user::Entity::find()
             .filter(user::Column::Username.eq(&req.username))
-            .one(&self.db)
+            .one(&txn)
             .await
             .map_err(|_| AuthError::Internal("数据库查询失败".to_string()))?;
 
@@ -76,7 +105,7 @@ impl UserService {
         // 检查邮箱是否已存在
         let existing_email = user::Entity::find()
             .filter(user::Column::Email.eq(&req.email))
-            .one(&self.db)
+            .one(&txn)
             .await
             .map_err(|_| AuthError::Internal("数据库查询失败".to_string()))?;
 
@@ -97,10 +126,11 @@ impl UserService {
             ..Default::default()
         };
 
-        let user_model = new_user
-            .insert(&self.db)
+        let user_model = new_user.insert(&txn).await.map_err(map_insert_user_error)?;
+
+        txn.commit()
             .await
-            .map_err(|_| AuthError::Internal("创建用户失败".to_string()))?;
+            .map_err(|_| AuthError::Internal("数据库事务提交失败".to_string()))?;
 
         Ok(RegisterResponse {
             id: user_model.id,
@@ -188,5 +218,25 @@ impl UserService {
             username: user_model.username,
             email: user_model.email,
         })
+    }
+}
+
+fn map_insert_user_error(error: sea_orm::DbErr) -> AuthError {
+    if matches!(error.sql_err(), Some(SqlErr::UniqueConstraintViolation(_))) {
+        return AuthError::UserAlreadyExists;
+    }
+
+    tracing::error!(error = %error, "create user failed");
+    AuthError::Internal("创建用户失败".to_string())
+}
+
+impl From<user::Model> for UserListItem {
+    fn from(model: user::Model) -> Self {
+        Self {
+            id: model.id,
+            username: model.username,
+            email: model.email,
+            status: model.status,
+        }
     }
 }

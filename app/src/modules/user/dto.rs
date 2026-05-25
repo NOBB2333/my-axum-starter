@@ -1,6 +1,22 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// 用户列表项
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct UserListItem {
+    /// 用户ID
+    pub id: i32,
+
+    /// 用户名
+    pub username: String,
+
+    /// 邮箱
+    pub email: String,
+
+    /// 用户状态（0=激活，1=停用，2=删除）
+    pub status: i16,
+}
+
 /// 用户注册请求
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RegisterRequest {
